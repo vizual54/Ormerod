@@ -6,27 +6,26 @@
 #include "globals.h"
 
 #define INTERRUPT_PIN0 0
+#define DEBUG true
 
-const byte pushButton1_pin		= A0;
-const byte pushButton2_pin		= A1;
-const byte pot_pin				= A3;
-const byte power_led_pin		= A4;
-const byte user_mode_led_pin	= A5;
-const byte auto_mode_led_pin	= A6;
-const byte alert_led_pin		= A7;
+const byte pushButton2_pin		= A5;
+const byte pushButton1_pin		= A4;
+const byte pot_pin				= A6;
+//const byte power_led_pin		= A4;
+//const byte user_mode_led_pin	= A5;
+//const byte auto_mode_led_pin	= A6;
+//const byte alert_led_pin		= A7;
 
 const byte rpm_pin				= 2;
 const byte pwm_pin1				= 3;
 const byte dht_pin				= 4;
-
-
-const byte pwm_pin2				= 11;
+const byte reserved				= 11;
 
 uint16_t		rpc_min = 0;
 uint16_t		rpc_max = 255;
 uint16_t		rpc_mid = rpc_min + (rpc_max - rpc_min) / 2;
 uint16_t		rpc_start = rpc_mid;
-uint16_t		rpc_out = rpc_min;
+double		rpc_out = rpc_min;
 
 volatile byte	half_revolutions;
 uint16_t		rpm;
@@ -45,7 +44,7 @@ uint16_t		ms_per_ramp_step = 43;
 unsigned long   temp_time_old;
 double			pid_setpoint = 23;
 double			pid_input, pid_output;
-PID				pid_controller(&pid_input, &pid_output, &pid_setpoint, 120, 0, 0, REVERSE);
+PID				pid_controller(&pid_input, &rpc_out, &pid_setpoint, 120, 0, 0, REVERSE);
 
 byte			button1_state;
 byte			last_button1_state = LOW;
@@ -55,21 +54,12 @@ byte			button2_state;
 byte			last_button2_state = LOW;
 long			last_button2_debounce_time = 0;
 
-void set_duty_cycle(uint16_t cycle)
+void set_duty_cycle(double cycle)
 {
-	/*Serial.print("cycle: ");
-	Serial.println(cycle);*/
 	OCR2B = (int)((float)cycle / 255.0f * ((float)OCR2A - 23.7f) + 23.7f);
-	//int value = (int)((float)cycle / (float)rpc_max * (float)79);
-	//OCR2B = value; //(uint8_t)((float)(cycle - rpc_min) / (float)(rpc_max - rpc_min)) * (79 - 0);
-	/*Serial.print("rpc_out: ");
-	Serial.print(rpc_out);
-	Serial.print("\n");
-	Serial.print("OCR2B: ");
-	Serial.println(value);*/
 }
 
-void ramp_up(uint16_t rpc_end)
+void ramp_up(double rpc_end)
 {
 	while (rpc_out < rpc_end)
 	{
@@ -78,7 +68,7 @@ void ramp_up(uint16_t rpc_end)
 	}
 }
 
-void ramp_up(uint16_t ramp_ms, uint16_t rpc_end)
+void ramp_up(uint16_t ramp_ms, double rpc_end)
 {
 	uint16_t steps = rpc_end - rpc_out;
 	uint16_t ms_per_step = ramp_ms / steps;
@@ -90,7 +80,7 @@ void ramp_up(uint16_t ramp_ms, uint16_t rpc_end)
 	}
 }
 
-void ramp_down(uint16_t rpc_end)
+void ramp_down(double rpc_end)
 {
 	while (rpc_out > rpc_end)
 	{
@@ -99,7 +89,7 @@ void ramp_down(uint16_t rpc_end)
 	}
 }
 
-void ramp_down(uint16_t ramp_ms, uint16_t rpc_end)
+void ramp_down(uint16_t ramp_ms, double rpc_end)
 {
 	uint16_t steps = rpc_out - rpc_end;
 	uint16_t ms_per_step = ramp_ms / steps;
@@ -137,19 +127,39 @@ void switch_mode(mode m)
 		switch (current_mode)
 		{
 		case user:
-			digitalWrite(user_mode_led_pin, HIGH);
-			digitalWrite(alert_led_pin, LOW);
-			digitalWrite(auto_mode_led_pin, LOW);
+		{
+			PORTC = user_mode;
+			pid_controller.SetMode(MANUAL);
+			double temp_rpc = (double)((float)analogRead(pot_pin) / 1023.0f * (rpc_max - rpc_min) + rpc_min);
+			//Serial.print("Temp rpc: ");
+			//Serial.println(temp_rpc);
+			//Serial.print("RPC is: ");
+			//Serial.println(rpc_out);
+			if (last_mode == pid_ctrl || last_mode == failsafe)
+			{
+				if (temp_rpc < rpc_out)
+				{
+					Serial.print("Ramping down to: ");
+					Serial.println(temp_rpc);
+					ramp_down(temp_rpc);
+				}
+				else if (temp_rpc > rpc_out)
+				{
+					Serial.print("Ramping up to: ");
+					Serial.println(temp_rpc);
+					ramp_up(temp_rpc);
+				}
+			}
+			
 			break;
+		}
 		case pid_ctrl:
-			digitalWrite(user_mode_led_pin, LOW);
-			digitalWrite(alert_led_pin, LOW);
-			digitalWrite(auto_mode_led_pin, HIGH);
+			PORTC = auto_mode;
+			pid_controller.SetMode(AUTOMATIC);
 			break;
 		case failsafe:
-			digitalWrite(user_mode_led_pin, LOW);
-			digitalWrite(alert_led_pin, HIGH);
-			digitalWrite(auto_mode_led_pin, LOW);
+			PORTC = alert_mode;
+			pid_controller.SetMode(MANUAL);
 			break;
 		default:
 			break;
@@ -213,26 +223,39 @@ ISR(TIMER1_COMPA_vect)
 	pid_controller.Compute();
 }
 
-void setup() {
-	Serial.begin(19200);
-	cli();		// disable all interrupts
-	pinMode(auto_mode_led_pin, OUTPUT);
-	pinMode(alert_led_pin, OUTPUT);
-	pinMode(power_led_pin, OUTPUT);
-	digitalWrite(power_led_pin, HIGH);
-	digitalWrite(auto_mode_led_pin, LOW);
-	digitalWrite(alert_led_pin, LOW);
-	pinMode(pwm_pin1, OUTPUT);  // OCR2A
-	pinMode(pwm_pin2, OUTPUT); // OCR2B
-	digitalWrite(LOW, pwm_pin1);
-	digitalWrite(LOW, pwm_pin2);
+void setup_pins()
+{
+	DDRC = 0x0F; // Set PC0-PC3 as input and PC4-PC7 as output
+	PORTC = 0x0F; // light up all status lights
+	//pinMode(alert_led_pin, OUTPUT);
+	//pinMode(power_led_pin, OUTPUT);
+	//digitalWrite(power_led_pin, HIGH);
+	//digitalWrite(auto_mode_led_pin, LOW);
+	//digitalWrite(alert_led_pin, LOW);
 	// A0 and A2 as inputs
-	pinMode(INPUT, pushButton1_pin);
-	pinMode(INPUT, pushButton2_pin);
-	pinMode(INPUT, pot_pin);
+	//pinMode(INPUT, pushButton1_pin);
+	//pinMode(INPUT, pushButton2_pin);
+
+	pinMode(pwm_pin1, OUTPUT);  // OCR2A
+	//	pinMode(pwm_pin2, OUTPUT); // OCR2B
+	digitalWrite(LOW, pwm_pin1);
+	//	digitalWrite(LOW, pwm_pin2);
+	//pinMode(INPUT, pot_pin);
 	pinMode(INPUT, dht_pin);
 	// Setup interrupt on digital pin 2, enable pull up resistor for digital 2
 	digitalWrite(2, HIGH);
+}
+
+int freeRAM() {
+	extern int __heap_start, *__brkval;
+	int v;
+	return (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
+}
+
+void setup() {
+	Serial.begin(19200);
+	cli();		// disable all interrupts
+	setup_pins();
 	attachInterrupt(INTERRUPT_PIN0, rpm_function, RISING);
 	half_revolutions = 0;
 	rpm = 0;
@@ -251,19 +274,14 @@ void setup() {
 	TCCR2A = _BV(COM2A0) | _BV(COM2B1) | _BV(WGM21) | _BV(WGM20);
 	TCCR2B = _BV(WGM22) | _BV(CS21);
 	OCR2A = 79;
-	// should check potentiometer and set mode to user ctrl
-	set_duty_cycle(rpc_mid); // set OCR2B
 	
-	
+	pid_controller.SetOutputLimits(0, 255);
 	pid_controller.SetMode(MANUAL);
 	//pid_controller.SetControllerDirection(0);
 	sei();									// enable interrupts
-
-	//Serial.println("Run initial test");
-	//test(3000);
-	//Serial.println("Test done.");
+	
 	current_mode = user;
-	digitalWrite(user_mode_led_pin, HIGH);
+	PORTC = user_mode;
 	int value = analogRead(pot_pin);
 	rpc_out = value / 1023 * (rpc_max - rpc_min) + rpc_min;
 	set_duty_cycle(rpc_out);
@@ -277,24 +295,7 @@ void loop()
 		rpm_time_old = millis();
 		half_revolutions = 0;
 	}
-	/*
-	//Check buttons, debounce
-	byte button1_reading = digitalRead(pushButton1_pin);
-	if (button1_reading != last_button1_state)
-	{
-		last_button1_debounce_time = millis();
-	}
-	if ((millis() - last_button1_debounce_time) > debounce_delay)
-	{
-		if (button1_reading != button1_state)
-		{
-			button1_state = button1_reading;
-			Serial.println("button 1 pressed");
-			switch_mode(user);
-			pid_controller.SetMode(MANUAL);
-		}
-	}
-	*/
+
 	check_button_debounced(pushButton1_pin, button1_state, last_button1_state, last_button1_state, last_button1_debounce_time);
 	if (button1_state)
 	{
@@ -302,7 +303,6 @@ void loop()
 		if (current_mode != user)
 		{
 			switch_mode(user);
-			pid_controller.SetMode(MANUAL);
 		}
 	}
 	check_button_debounced(pushButton2_pin, button2_state, last_button2_state, last_button2_state, last_button2_debounce_time);
@@ -312,37 +312,40 @@ void loop()
 		if (current_mode != pid_ctrl)
 		{
 			switch_mode(pid_ctrl);
-			pid_controller.SetMode(AUTOMATIC);
 		}
 	}
-	
-	// Print temperature every 10 seconds
-	if (millis() - temp_time_old > 10000)
+
+#ifdef DEBUG
+	// Print temperature every 5 seconds
+	if (millis() - temp_time_old > 5000)
 	{
 		Serial.print("Temperature:");
 		Serial.println(current_temp);
-		Serial.print("PID output: ");
-		Serial.println(pid_output);
+		Serial.print("RPC_OUT is: ");
+		Serial.println(rpc_out);
+		Serial.print("Free ram : ");
+		Serial.println(freeRAM());
 		temp_time_old = millis();
 	}
-	
+#endif
+
 	// Make sure we have good temp readings
 	if (dht_chk == DHTLIB_OK && millis() - last_good_temp < 20000)
 	{
 		if (current_mode != failsafe && current_temp > max_temp)
 		{
 			// Go into full speed mode until temp is down
-			Serial.println("Full speed mode");
+			Serial.println("Failsafe mode full speed.");
 			switch_mode(failsafe);
 			switch_failsafe_mode(high_temp);
 		}
 		else if (current_mode != failsafe && current_temp < min_temp)
 		{
-			Serial.println("Min speed mode");
+			Serial.println("Failsafe mode min speed.");
 			switch_mode(failsafe);
 			switch_failsafe_mode(low_temp);
 		}
-		else if (current_mode == failsafe && current_temp < max_temp && current_temp > min_temp)
+		else if (current_mode == failsafe && current_temp < (max_temp - 5) && current_temp > (min_temp + 5))
 		{
 			switch_mode(last_mode);
 		}
@@ -363,17 +366,13 @@ void loop()
 	case user:
 	{
 		int value = analogRead(pot_pin);
-		//Serial.print("Analog value is: ");
-		//Serial.println(value);
-		rpc_out = (int)((float)value / 1023.0f * (rpc_max - rpc_min) + rpc_min);
-		//Serial.print("Rpc_out is: ");
-		//Serial.println(rpc_out);
+		rpc_out = (double)((float)value / 1023.0f * (rpc_max - rpc_min) + rpc_min);
 		set_duty_cycle(rpc_out);
 		break;
 	}
 	case pid_ctrl:
 	{
-		rpc_out = (uint16_t)pid_output;
+		//rpc_out = (uint16_t)pid_output;
 		set_duty_cycle(rpc_out);
 		break;
 	}
