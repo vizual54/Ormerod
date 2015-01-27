@@ -9,16 +9,17 @@
 
 const byte pushButton1_pin		= A0;
 const byte pushButton2_pin		= A1;
-//const byte relay1_pin			= A2;
-//const byte relay2_pin			= A3;
-const byte pot_pin				= A6;
+const byte pot_pin				= A3;
+const byte power_led_pin		= A4;
+const byte user_mode_led_pin	= A5;
+const byte auto_mode_led_pin	= A6;
+const byte alert_led_pin		= A7;
+
 const byte rpm_pin				= 2;
 const byte pwm_pin1				= 3;
 const byte dht_pin				= 4;
-const byte auto_mode_led_pin	= A5;
-const byte alert_led_pin		= A4;
-const byte power_led_pin		= A3;
-const byte user_mode_led_pin	= A2;
+
+
 const byte pwm_pin2				= 11;
 
 uint16_t		rpc_min = 0;
