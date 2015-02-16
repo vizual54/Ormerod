@@ -61,4 +61,6 @@ extern "C" void __cxa_pure_virtual() {;}
 #define portModeRegister(P)
 #include <pwm_fan_ctrl.ino>
 #include <globals.h>
+#include <tempProbe.cpp>
+#include <tempProbe.h>
 #endif

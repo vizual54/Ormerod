@@ -1,16 +1,19 @@
+#include <U8glib.h>
+#include <OneWire.h>
 #include <avr/wdt.h>
 #include <PID_v1.h>
 #include <dht.h>
 #include "globals.h"
+#include "tempProbe.h"
 
 #define INTERRUPT_PIN0 0
 #define DEBUG
-//#define DEBUG_TEMP
+#define DEBUG_TEMP
 #define HEARTBEATLED 13
 #define HEARTBEATFREQ 500
 
-const byte pushButton2_pin		= A5;
-const byte pushButton1_pin		= A4;
+//const byte pushButton2_pin		= A5;
+//const byte pushButton1_pin		= A4;
 const byte pot_pin				= A6;
 //const byte power_led_pin		= A4;
 //const byte user_mode_led_pin	= A5;
@@ -20,6 +23,8 @@ const byte pot_pin				= A6;
 const byte rpm_pin				= 2;
 const byte pwm_pin1				= 3;
 const byte dht_pin				= 4;
+const byte pushButton1_pin		= 9;
+const byte pushButton2_pin		= 10;
 const byte reserved				= 11;
 
 byte	hbState;
@@ -45,11 +50,14 @@ uint16_t		min_temp = 15;
 mode			current_mode;
 failsafe_mode   current_failsafe_mode;
 mode			last_mode;
-dht				DHT;
+//dht				DHT;
 uint16_t		ms_per_ramp_step = 10;
 unsigned long   debug_time;
 
 PID				pid_controller(&pid_input_temp, &rpc_out, &setpoint_temp, 120, 50, 10, REVERSE);
+OneWire			oneWire(dht_pin);
+TempProbe		tempProbe(&oneWire);
+U8GLIB_SSD1306_128X64 u8g(U8G_I2C_OPT_DEV_0 | U8G_I2C_OPT_NO_ACK | U8G_I2C_OPT_FAST);
 
 byte			button1_state;
 byte			last_button1_state = LOW;
@@ -191,15 +199,33 @@ void check_button_debounced(const byte button, byte &button_state, byte &last_bu
 // Timer 1 interrupt read temperature and compute pid
 ISR(TIMER1_COMPA_vect)
 {
+	if (tempProbe.isReady())
+	{
+		current_temp = tempProbe.getTemp();
+		pid_input_temp = current_temp;
+		last_good_temp = millis();
+		tempProbe.update();
+#ifdef DEBUG_TEMP
+		Serial.print("Temp sensor ready. Got temp: ");
+		Serial.println(current_temp);
+	}
+	else
+	{
+		Serial.println("Temp sensor not ready.");
+	}
+#else
+	}
+#endif
+
+	/*
 	dht_chk = DHT.read21((uint8_t)dht_pin);
 
 	if (dht_chk == DHTLIB_OK)
 	{
 
 		current_temp = DHT.temperature;
-		pid_input_temp = current_temp;
-		last_good_temp = millis();
-#ifdef DEBUG_TEMP
+		
+
 		Serial.print("Temp ok: ");
 		Serial.println(current_temp);
 	}
@@ -217,6 +243,7 @@ ISR(TIMER1_COMPA_vect)
 #else
 	}
 #endif
+	*/
 }
 
 void setup_pins()
@@ -227,6 +254,8 @@ void setup_pins()
 	pinMode(pwm_pin1, OUTPUT);  // OCR2A
 	digitalWrite(LOW, pwm_pin1);
 	pinMode(INPUT, dht_pin);
+	pinMode(INPUT, pushButton1_pin);
+	pinMode(INPUT, pushButton2_pin);
 	// Setup interrupt on digital pin 2, enable pull up resistor for digital 2
 	digitalWrite(2, HIGH);
 }
@@ -260,7 +289,10 @@ void setup() {
 	TCCR2B = _BV(WGM22) | _BV(CS21);
 	OCR2A = 79;
 	
+	tempProbe.init();
+
 	pid_controller.SetOutputLimits(0, 255);
+	pid_controller.SetSampleTime(2000);
 	pid_controller.SetMode(MANUAL);
 	//pid_controller.SetControllerDirection(0);
 	sei();									// enable interrupts
@@ -272,7 +304,7 @@ void setup() {
 		Serial.println("waiting for temp.");
 #endif
 		delay(500);
-	} while (dht_chk != DHTLIB_OK && current_temp <= 0);
+	} while (current_temp <= 0);
 
 	pid_input_temp = current_temp;
 	pid_controller.Compute();
