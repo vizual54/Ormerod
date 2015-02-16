@@ -2,7 +2,6 @@
 #include <OneWire.h>
 #include <avr/wdt.h>
 #include <PID_v1.h>
-#include <dht.h>
 #include "globals.h"
 #include "tempProbe.h"
 
@@ -43,7 +42,6 @@ volatile double	current_temp = 0.0;
 double			pid_input_temp;
 double			setpoint_temp = 23;
 volatile long	last_good_temp;
-volatile int	dht_chk = DHTLIB_INVALID_VALUE;
 uint16_t		max_temp = 40;
 uint16_t		min_temp = 15;
 
@@ -116,8 +114,10 @@ void switch_mode(mode m)
 {
 	if (m != current_mode)
 	{
+#ifdef DEBUG
 		Serial.print("Switching mode to: ");
 		Serial.println(m);
+#endif
 		last_mode = current_mode;
 		current_mode = m;
 		switch (current_mode)
@@ -130,22 +130,23 @@ void switch_mode(mode m)
 				PORTC = user_mode | alert_mode;
 			pid_controller.SetMode(MANUAL);
 			double temp_rpc = (double)((float)analogRead(pot_pin) / 1023.0f * (rpc_max - rpc_min) + rpc_min);
-			//Serial.print("Temp rpc: ");
-			//Serial.println(temp_rpc);
-			//Serial.print("RPC is: ");
-			//Serial.println(rpc_out);
+
 			if (last_mode == pid_ctrl || last_mode == failsafe)
 			{
 				if (temp_rpc < rpc_out)
 				{
+#ifdef DEBUG
 					Serial.print("Ramping down to: ");
 					Serial.println(temp_rpc);
+#endif
 					ramp_down(temp_rpc);
 				}
 				else if (temp_rpc > rpc_out)
 				{
+#ifdef DEBUG
 					Serial.print("Ramping up to: ");
 					Serial.println(temp_rpc);
+#endif
 					ramp_up(temp_rpc);
 				}
 			}
@@ -196,7 +197,7 @@ void check_button_debounced(const byte button, byte &button_state, byte &last_bu
 	last_button_state = button_reading;
 }
 
-// Timer 1 interrupt read temperature and compute pid
+// Timer 1 interrupt 1Hz, read temperature and compute pid
 ISR(TIMER1_COMPA_vect)
 {
 	if (tempProbe.isReady())
@@ -204,6 +205,7 @@ ISR(TIMER1_COMPA_vect)
 		current_temp = tempProbe.getTemp();
 		pid_input_temp = current_temp;
 		last_good_temp = millis();
+		pid_controller.Compute();
 		tempProbe.update();
 #ifdef DEBUG_TEMP
 		Serial.print("Temp sensor ready. Got temp: ");
@@ -216,34 +218,6 @@ ISR(TIMER1_COMPA_vect)
 #else
 	}
 #endif
-
-	/*
-	dht_chk = DHT.read21((uint8_t)dht_pin);
-
-	if (dht_chk == DHTLIB_OK)
-	{
-
-		current_temp = DHT.temperature;
-		
-
-		Serial.print("Temp ok: ");
-		Serial.println(current_temp);
-	}
-	else if (dht_chk == DHTLIB_ERROR_CHECKSUM)
-	{
-		Serial.print("temp sensor not ok. Checksum error. Got temp: ");
-		Serial.println(DHT.temperature);
-	}
-	else if (dht_chk == DHTLIB_ERROR_TIMEOUT)
-		Serial.println("temp sensot not ok. Error timeout.");
-	else if (dht_chk == DHTLIB_TIMEOUT)
-		Serial.println("temp sensot not ok. Timeout.");
-	else if (dht_chk == DHTLIB_INVALID_VALUE)
-		Serial.println("temp sensot not ok. Invalid value.");
-#else
-	}
-#endif
-	*/
 }
 
 void draw()
@@ -302,16 +276,17 @@ void setup() {
 	Serial.begin(19200);
 	cli();		// disable all interrupts
 	setup_pins();
+	u8g.setColorIndex(1);		// Setup display
 	attachInterrupt(INTERRUPT_PIN0, rpm_function, RISING);
 	half_revolutions = 0;
 	rpm = 0;
 	rpm_time_old = 0;
 	debug_time = 0;
-	// Setup 0.5 Hz interrupt on timer 1
+	// Setup 1 Hz interrupt on timer 1
 	TCCR1A = 0;								// set TCCR1A to 0
 	TCCR1B = 0;								// set TCCR1B to 0
-	TCNT1 = 0;								//initialize counter value to 0
-	OCR1A = 31249;							// set compare match register for 1hz increments (16,000,000 / (1024 * 0.5))-1
+	TCNT1 = 0;								// initialize counter value to 0
+	OCR1A = 15624;							// set compare match register for 1hz increments (16,000,000 / (1024 * 1))-1
 	TCCR1B |= (1 << WGM12);					// turn on CTC mode
 	TCCR1B |= (1 << CS12) | (1 << CS10);	// Set CS10 and CS12 bits for 1024 prescaler
 	TIMSK1 |= (1 << OCIE1A);				// enable timer compare interrupt
@@ -324,7 +299,7 @@ void setup() {
 	tempProbe.init();
 
 	pid_controller.SetOutputLimits(0, 255);
-	pid_controller.SetSampleTime(2000);
+	pid_controller.SetSampleTime(1000);
 	pid_controller.SetMode(MANUAL);
 	//pid_controller.SetControllerDirection(0);
 	sei();									// enable interrupts
@@ -345,25 +320,6 @@ void setup() {
 	PORTC = auto_mode;
 	set_duty_cycle(rpc_out);
 
-	// Setup display
-	// assign default color value
-	if (u8g.getMode() == U8G_MODE_R3G3B2) {
-		u8g.setColorIndex(255);     // white
-		Serial.println("White disp");
-	}
-	else if (u8g.getMode() == U8G_MODE_GRAY2BIT) {
-		u8g.setColorIndex(3);         // max intensity
-		Serial.println("max intensity disp");
-	}
-	else if (u8g.getMode() == U8G_MODE_BW) {
-		u8g.setColorIndex(1);         // pixel on
-		Serial.println("pixel on");
-	}
-	else if (u8g.getMode() == U8G_MODE_HICOLOR) {
-		u8g.setHiColorByRGB(255, 255, 255);
-		Serial.println("U8G_MODE_HICOLOR");
-	}
-
 	//Enable watchdog
 	wdt_enable(WDTO_4S);
 }
@@ -372,7 +328,7 @@ void loop()
 {
 	unsigned long begin = millis();
 	wdt_reset();
-	pid_controller.Compute();
+	
 	updateHeartbeat();
 
 	if (half_revolutions > 20)
@@ -420,18 +376,22 @@ void loop()
 #endif
 	
 	// Make sure we have good temp readings
-	if (dht_chk == DHTLIB_OK && millis() - last_good_temp < 20000)
+	if (millis() - last_good_temp < 20000)
 	{
 		if (current_mode != failsafe && current_temp > max_temp)
 		{
 			// Go into full speed mode until temp is down
+#ifdef DEBUG
 			Serial.println("Failsafe mode full speed.");
+#endif
 			switch_mode(failsafe);
 			switch_failsafe_mode(high_temp);
 		}
 		else if (current_mode != failsafe && current_temp < min_temp)
 		{
+#ifdef DEBUG
 			Serial.println("Failsafe mode min speed.");
+#endif
 			switch_mode(failsafe);
 			switch_failsafe_mode(low_temp);
 		}
@@ -440,11 +400,13 @@ void loop()
 			switch_mode(last_mode);
 		}
 	}
-	else if (dht_chk != DHTLIB_OK && millis() - last_good_temp > 20000)  // Something wrong the temp sensor, switch to failsafe and high temp mode
+	else if (millis() - last_good_temp > 20000)  // Something wrong the temp sensor, switch to failsafe and high temp mode
 	{
 		if (current_mode != failsafe && current_failsafe_mode != high_temp)
 		{
+#ifdef DEBUG
 			Serial.println("Something wrong with temp sensor. Switching failsafe and full speed.");
+#endif
 			switch_mode(failsafe);
 			switch_failsafe_mode(high_temp);
 		}
@@ -488,7 +450,7 @@ void loop()
 		break;
 	}
 
-	// picture loop
+	// Update display
 	u8g.firstPage();
 	do {
 		draw();
