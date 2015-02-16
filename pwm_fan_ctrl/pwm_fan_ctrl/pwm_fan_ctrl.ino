@@ -246,9 +246,41 @@ ISR(TIMER1_COMPA_vect)
 	*/
 }
 
+void draw()
+{
+	u8g.setFont(u8g_font_unifont);
+	u8g.setPrintPos(0, 10);
+	u8g.print("Current mode: ");
+	u8g.setPrintPos(0, 22);
+	switch (current_mode)
+	{
+	case user:
+		u8g.print("USER");
+		break;
+	case pid_ctrl:
+		u8g.print("PID Controlled");
+		break;
+	case failsafe:
+		u8g.print("FAILSAFE");
+		break;
+	default:
+		u8g.print("Unknown");
+		break;
+	}
+	u8g.setPrintPos(0, 34);
+	u8g.print("Temp: ");
+	u8g.print(current_temp);
+	u8g.setPrintPos(0, 46);
+	u8g.print("Setpoint: ");
+	u8g.print(setpoint_temp);
+	u8g.setPrintPos(0, 58);
+	u8g.print("RPC out: ");
+	u8g.print(rpc_out);
+}
+
 void setup_pins()
 {
-	DDRC = 0x0F; // Set PC0-PC3 as output and PC4-PC7 as input
+	DDRC = 0x3F; // Set PC0-PC3 as output and PC4-PC7 as input
 	PORTC = 0x0F; // light up all status lights
 
 	pinMode(pwm_pin1, OUTPUT);  // OCR2A
@@ -312,6 +344,25 @@ void setup() {
 	current_mode = pid_ctrl;
 	PORTC = auto_mode;
 	set_duty_cycle(rpc_out);
+
+	// Setup display
+	// assign default color value
+	if (u8g.getMode() == U8G_MODE_R3G3B2) {
+		u8g.setColorIndex(255);     // white
+		Serial.println("White disp");
+	}
+	else if (u8g.getMode() == U8G_MODE_GRAY2BIT) {
+		u8g.setColorIndex(3);         // max intensity
+		Serial.println("max intensity disp");
+	}
+	else if (u8g.getMode() == U8G_MODE_BW) {
+		u8g.setColorIndex(1);         // pixel on
+		Serial.println("pixel on");
+	}
+	else if (u8g.getMode() == U8G_MODE_HICOLOR) {
+		u8g.setHiColorByRGB(255, 255, 255);
+		Serial.println("U8G_MODE_HICOLOR");
+	}
 
 	//Enable watchdog
 	wdt_enable(WDTO_4S);
@@ -436,6 +487,12 @@ void loop()
 	default:
 		break;
 	}
+
+	// picture loop
+	u8g.firstPage();
+	do {
+		draw();
+	} while (u8g.nextPage());
 
 	loopTime = millis() - begin;
 }
