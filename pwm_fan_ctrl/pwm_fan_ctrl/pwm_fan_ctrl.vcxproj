@@ -60,7 +60,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>C:\Program Files (x86)\Arduino\hardware\arduino\cores\arduino;C:\Program Files (x86)\Arduino\hardware\arduino\variants\standard;C:\Development\Ormerod\pwm_fan_ctrl\pwm_fan_ctrl;C:\Development\Ormerod\pwm_fan_ctrl\libraries\PID_v1;C:\Development\Ormerod\pwm_fan_ctrl\libraries\PID_v1\utility;C:\Development\Ormerod\pwm_fan_ctrl\libraries\DHT;C:\Development\Ormerod\pwm_fan_ctrl\libraries\DHT\utility;C:\Program Files (x86)\Arduino\libraries;C:\Program Files (x86)\Arduino\hardware\arduino\libraries;C:\Program Files (x86)\Visual Micro\Visual Micro for Arduino\Micro Platforms\default\debuggers;C:\Development\Ormerod\pwm_fan_ctrl\libraries;c:\program files (x86)\arduino\hardware\tools\avr\avr\include\;c:\program files (x86)\arduino\hardware\tools\avr\avr\include\avr\;c:\program files (x86)\arduino\hardware\tools\avr\avr\;c:\program files (x86)\arduino\hardware\tools\avr\lib\gcc\avr\4.3.2\include\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Program Files (x86)\Arduino\hardware\arduino\cores\arduino;C:\Program Files (x86)\Arduino\hardware\arduino\variants\standard;C:\Development\Ormerod\pwm_fan_ctrl\pwm_fan_ctrl;C:\Program Files (x86)\Arduino\libraries\EEPROM;C:\Program Files (x86)\Arduino\libraries\EEPROM\utility;C:\Development\Ormerod\pwm_fan_ctrl\libraries\U8glib;C:\Development\Ormerod\pwm_fan_ctrl\libraries\U8glib\utility;C:\Development\Ormerod\pwm_fan_ctrl\libraries\OneWire;C:\Development\Ormerod\pwm_fan_ctrl\libraries\OneWire\utility;C:\Development\Ormerod\pwm_fan_ctrl\libraries\PID_v1;C:\Development\Ormerod\pwm_fan_ctrl\libraries\PID_v1\utility;C:\Program Files (x86)\Arduino\libraries;C:\Program Files (x86)\Arduino\hardware\arduino\libraries;C:\Program Files (x86)\Visual Micro\Visual Micro for Arduino\Micro Platforms\default\debuggers;C:\Development\Ormerod\pwm_fan_ctrl\libraries;c:\program files (x86)\arduino\hardware\tools\avr\avr\include\;c:\program files (x86)\arduino\hardware\tools\avr\avr\include\avr\;c:\program files (x86)\arduino\hardware\tools\avr\avr\;c:\program files (x86)\arduino\hardware\tools\avr\lib\gcc\avr\4.3.2\include\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ForcedIncludeFiles>C:\Development\Ormerod\pwm_fan_ctrl\pwm_fan_ctrl\Visual Micro\.pwm_fan_ctrl.vsarduino.h;%(ForcedIncludeFiles)</ForcedIncludeFiles>
       <IgnoreStandardIncludePath>true</IgnoreStandardIncludePath>
       <WholeProgramOptimization>false</WholeProgramOptimization>
@@ -79,7 +79,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="globals.h" />
+    <ClInclude Include="tempProbe.h" />
     <ClInclude Include="Visual Micro\.pwm_fan_ctrl.vsarduino.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="tempProbe.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

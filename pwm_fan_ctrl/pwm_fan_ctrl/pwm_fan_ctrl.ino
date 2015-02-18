@@ -1,3 +1,4 @@
+#include <EEPROM.h>
 #include <U8glib.h>
 #include <OneWire.h>
 #include <avr/wdt.h>
@@ -41,6 +42,9 @@ unsigned long	rpm_time_old;
 volatile double	current_temp = 0.0;
 double			pid_input_temp;
 double			setpoint_temp = 23;
+double			p_term = 120;
+double			i_term = 50;
+double			d_term = 10;
 volatile long	last_good_temp;
 uint16_t		max_temp = 40;
 uint16_t		min_temp = 15;
@@ -52,7 +56,7 @@ mode			last_mode;
 uint16_t		ms_per_ramp_step = 10;
 unsigned long   debug_time;
 
-PID				pid_controller(&pid_input_temp, &rpc_out, &setpoint_temp, 120, 50, 10, REVERSE);
+PID				pid_controller(&pid_input_temp, &rpc_out, &setpoint_temp, p_term, i_term, d_term, REVERSE);
 OneWire			oneWire(dht_pin);
 TempProbe		tempProbe(&oneWire);
 U8GLIB_SSD1306_128X64 u8g(U8G_I2C_OPT_DEV_0 | U8G_I2C_OPT_NO_ACK | U8G_I2C_OPT_FAST);
@@ -272,6 +276,44 @@ int freeRAM() {
 	return (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
 }
 
+void saveSettings()
+{
+	saveSetpoint();
+	savePidTerms();
+}
+
+void saveSetpoint()
+{
+	// Setpoint temp
+	uint8_t temp = (uint8_t)setpoint_temp * 10;
+	EEPROM.write(1, temp);
+}
+
+void savePidTerms()
+{
+	uint16_t temp;
+	// P-term
+	temp = p_term * 100;
+	EEPROM.write(2, (uint8_t)p_term);
+	EEPROM.write(3, (uint8_t)p_term >> 8);
+	// I-term
+	temp = i_term * 100;
+	EEPROM.write(4, (uint8_t)i_term);
+	EEPROM.write(5, (uint8_t)i_term >> 8);
+	// D-term
+	temp = d_term * 100;
+	EEPROM.write(6, (uint8_t)d_term);
+	EEPROM.write(7, (uint8_t)d_term >> 8);
+}
+
+void loadSettings()
+{
+	setpoint_temp = ((double)EEPROM.read(1) / 10.0);
+	p_term = (double)(EEPROM.read(2) + (EEPROM.read(3) << 8)) / 100;
+	i_term = (double)(EEPROM.read(4) + (EEPROM.read(5) << 8)) / 100;
+	d_term = (double)(EEPROM.read(6) + (EEPROM.read(7) << 8)) / 100;
+}
+
 void setup() {
 	Serial.begin(19200);
 	cli();		// disable all interrupts
@@ -298,6 +340,27 @@ void setup() {
 	
 	tempProbe.init();
 
+	if (EEPROM.read(0) != 1)
+	{
+#ifdef DEBUG
+		Serial.println("No settings saved in EEPROM.");
+#endif
+		saveSettings();
+		EEPROM.write(0, 1);
+	}
+
+	loadSettings();
+	pid_controller.SetTunings(p_term, i_term, d_term);
+#ifdef DEBUG
+	Serial.print("PID controller Kp = ");
+	Serial.print(pid_controller.GetKp());
+	Serial.print(" Ki = ");
+	Serial.print(pid_controller.GetKi());
+	Serial.print(" Kd = ");
+	Serial.println(pid_controller.GetKd());
+	Serial.print("PID controller setpoint = ");
+	Serial.println(setpoint_temp);
+#endif
 	pid_controller.SetOutputLimits(0, 255);
 	pid_controller.SetSampleTime(1000);
 	pid_controller.SetMode(MANUAL);
