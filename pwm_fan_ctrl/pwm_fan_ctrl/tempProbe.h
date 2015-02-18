@@ -2,7 +2,7 @@
 
 #include <OneWire.h>
 
-#define SENSOR_OK_NOT_READY 0
+#define SENSOR_NOT_READY 0
 #define SENSOR_NOT_OK -1
 #define SENSOR_READY 1
 

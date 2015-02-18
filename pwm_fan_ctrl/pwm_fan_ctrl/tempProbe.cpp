@@ -27,12 +27,12 @@ int8_t TempProbe::isReady()
 			}
 			else
 			{
-				return SENSOR_OK_NOT_READY;
+				return SENSOR_NOT_READY;
 			}
 		}
 		else
 		{
-			return SENSOR_OK_NOT_READY;
+			return SENSOR_NOT_READY;
 		}
 	}
 	return SENSOR_NOT_OK;
@@ -99,7 +99,12 @@ boolean TempProbe::_getAddress()
 boolean TempProbe::_updateTemp()
 {
 	byte data[12];
-	_oneWire->reset();
+	uint8_t res = _oneWire->reset();
+	if (res == 0)
+	{
+		_sensorFound = 0;
+		return false;
+	}
 	_oneWire->select(_address);
 	_oneWire->write(0xBE);       // read scratchpad
 	for (int i = 0; i < 9; i++)
