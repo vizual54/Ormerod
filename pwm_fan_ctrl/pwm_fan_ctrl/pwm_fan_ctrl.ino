@@ -41,7 +41,7 @@ uint16_t		rpm;
 unsigned long	rpm_time_old;
 volatile double	current_temp = 0.0;
 double			pid_input_temp;
-double			setpoint_temp = 23;
+double			setpoint_temp = 22.5;
 double			p_term = 120;
 double			i_term = 50;
 double			d_term = 10;
@@ -285,7 +285,7 @@ void saveSettings()
 void saveSetpoint()
 {
 	// Setpoint temp
-	uint8_t temp = (uint8_t)setpoint_temp * 10;
+	uint8_t temp = (uint8_t)(setpoint_temp * 10);
 	EEPROM.write(1, temp);
 }
 
@@ -294,16 +294,16 @@ void savePidTerms()
 	uint16_t temp;
 	// P-term
 	temp = p_term * 100;
-	EEPROM.write(2, (uint8_t)p_term);
-	EEPROM.write(3, (uint8_t)p_term >> 8);
+	EEPROM.write(2, (uint8_t)temp);
+	EEPROM.write(3, (uint8_t)(temp >> 8));
 	// I-term
 	temp = i_term * 100;
-	EEPROM.write(4, (uint8_t)i_term);
-	EEPROM.write(5, (uint8_t)i_term >> 8);
+	EEPROM.write(4, (uint8_t)temp);
+	EEPROM.write(5, (uint8_t)(temp >> 8));
 	// D-term
 	temp = d_term * 100;
-	EEPROM.write(6, (uint8_t)d_term);
-	EEPROM.write(7, (uint8_t)d_term >> 8);
+	EEPROM.write(6, (uint8_t)temp);
+	EEPROM.write(7, (uint8_t)(temp >> 8));
 }
 
 void loadSettings()
@@ -312,6 +312,17 @@ void loadSettings()
 	p_term = (double)(EEPROM.read(2) + (EEPROM.read(3) << 8)) / 100;
 	i_term = (double)(EEPROM.read(4) + (EEPROM.read(5) << 8)) / 100;
 	d_term = (double)(EEPROM.read(6) + (EEPROM.read(7) << 8)) / 100;
+#ifdef DEBUG
+	Serial.println("Settings loaded from EEPROM.");
+	Serial.print("Setpoint temperature: ");
+	Serial.println(setpoint_temp);
+	Serial.print("p_term: ");
+	Serial.print(p_term);
+	Serial.print(" i_term: ");
+	Serial.print(i_term);
+	Serial.print(" d_term: ");
+	Serial.println(d_term);
+#endif
 }
 
 void setup() {
