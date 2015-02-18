@@ -2,9 +2,14 @@
 
 #include <OneWire.h>
 
+#define SENSOR_OK_NOT_READY 0
+#define SENSOR_NOT_OK -1
+#define SENSOR_READY 1
+
 class TempProbe
 {
 	OneWire* _oneWire;
+	uint8_t _sensorFound;
 	byte _address[8];
 	float _temperature;
 	boolean _getAddress();
@@ -15,9 +20,9 @@ class TempProbe
 
 public:
 	TempProbe(OneWire* oneWire) { _oneWire = oneWire; _getAddress(); }
-	void init();
+	bool init();
 	void update();
 	float getTemp();
-	bool isReady();
+	int8_t isReady();
 };
 

@@ -2,25 +2,40 @@
 
 #define DEBUG
 
-void TempProbe::init()
+bool TempProbe::init()
 {
-	_getAddress();
-	_oneWire->reset();
-	_oneWire->skip();
-	_oneWire->write(0x44);
-	_last_sample = millis();
+	if (_getAddress() && _sensorFound != 0)
+	{
+		_oneWire->reset();
+		_oneWire->skip();
+		_oneWire->write(0x44);
+		_last_sample = millis();
+		return true;
+	}
+	return false;
 }
 
-bool TempProbe::isReady()
+int8_t TempProbe::isReady()
 {
-	if (millis() - _last_sample >= 1000)
+	if (_sensorFound)
 	{
-		return _updateTemp();
+		if (millis() - _last_sample >= 1000)
+		{
+			if (_updateTemp())
+			{
+				return SENSOR_READY;
+			}
+			else
+			{
+				return SENSOR_OK_NOT_READY;
+			}
+		}
+		else
+		{
+			return SENSOR_OK_NOT_READY;
+		}
 	}
-	else
-	{
-		return false;
-	}
+	return SENSOR_NOT_OK;
 }
 
 void TempProbe::update()
@@ -42,33 +57,43 @@ void TempProbe::_startConversion()
 
 boolean TempProbe::_getAddress()
 {
-	_oneWire->search(_address);
+	_sensorFound = _oneWire->search(_address);
 
-	if (OneWire::crc8(_address, 7) != _address[7])
+	if (_sensorFound != 0)
 	{
-		return false;
-	}
-	
-	if (_address[0] == 0x10)
-	{
-		_type_s = 1;
+		if (OneWire::crc8(_address, 7) != _address[7])
+		{
+			return false;
+		}
+
+		if (_address[0] == 0x10)
+		{
+			_type_s = 1;
+		}
+		else
+		{
+			_type_s = 0;
+		}
+
+#ifdef DEBUG
+		Serial.print("New sensor found at address: ");
+		for (int i = 0; i < 6; i++)
+		{
+			Serial.print(_address[i], HEX);
+			Serial.print(" ");
+		}
+		Serial.println(_address[7]);
+#endif
+
+		return true;
 	}
 	else
 	{
-		_type_s = 0;
-	}
-
 #ifdef DEBUG
-	Serial.print("New sensor found at address: ");
-	for (int i = 0; i < 6; i++)
-	{
-		Serial.print(_address[i], HEX);
-		Serial.print(" ");
-	}
-	Serial.println(_address[7]);
+		Serial.println("No temp sensor found");
 #endif
-
-	return true;
+		return false;
+	}
 }
 
 boolean TempProbe::_updateTemp()

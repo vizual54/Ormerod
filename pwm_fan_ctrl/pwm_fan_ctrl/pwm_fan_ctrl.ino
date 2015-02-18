@@ -59,6 +59,7 @@ unsigned long   debug_time;
 PID				pid_controller(&pid_input_temp, &rpc_out, &setpoint_temp, p_term, i_term, d_term, REVERSE);
 OneWire			oneWire(dht_pin);
 TempProbe		tempProbe(&oneWire);
+bool			temp_probe_ok;
 U8GLIB_SSD1306_128X64 u8g(U8G_I2C_OPT_DEV_0 | U8G_I2C_OPT_NO_ACK | U8G_I2C_OPT_FAST);
 
 byte			button1_state;
@@ -204,7 +205,8 @@ void check_button_debounced(const byte button, byte &button_state, byte &last_bu
 // Timer 1 interrupt 1Hz, read temperature and compute pid
 ISR(TIMER1_COMPA_vect)
 {
-	if (tempProbe.isReady())
+	int8_t res = tempProbe.isReady();
+	if (res == SENSOR_READY)
 	{
 		current_temp = tempProbe.getTemp();
 		pid_input_temp = current_temp;
@@ -214,14 +216,22 @@ ISR(TIMER1_COMPA_vect)
 #ifdef DEBUG_TEMP
 		Serial.print("Temp sensor ready. Got temp: ");
 		Serial.println(current_temp);
+#endif
+	}
+	else if (res == SENSOR_NOT_OK)
+	{
+#ifdef DEBUG_TEMP
+		Serial.println("Temp sensor not ok, try init again.");
+#endif
+		temp_probe_ok = tempProbe.init();
 	}
 	else
 	{
+#ifdef DEBUG_TEMP
 		Serial.println("Temp sensor not ready.");
-	}
-#else
-	}
 #endif
+	}
+
 }
 
 void draw()
@@ -348,8 +358,9 @@ void setup() {
 	TCCR2A = _BV(COM2A0) | _BV(COM2B1) | _BV(WGM21) | _BV(WGM20);
 	TCCR2B = _BV(WGM22) | _BV(CS21);
 	OCR2A = 79;
-	
-	tempProbe.init();
+	// Set fans to max until we got valid temp and can switch to auto
+	set_duty_cycle(255);
+	temp_probe_ok = tempProbe.init();
 
 	if (EEPROM.read(0) != 1)
 	{
@@ -385,7 +396,7 @@ void setup() {
 		Serial.println("waiting for temp.");
 #endif
 		delay(500);
-	} while (current_temp <= 0);
+	} while (!temp_probe_ok && current_temp <= 0);
 
 	pid_input_temp = current_temp;
 	pid_controller.Compute();
