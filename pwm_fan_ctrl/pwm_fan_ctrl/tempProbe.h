@@ -19,7 +19,7 @@ class TempProbe
 	unsigned long _last_sample;
 
 public:
-	TempProbe(OneWire* oneWire) { _oneWire = oneWire; _getAddress(); }
+	TempProbe(OneWire* oneWire) { _oneWire = oneWire; /*_getAddress();*/ }
 	bool init();
 	void update();
 	float getTemp();

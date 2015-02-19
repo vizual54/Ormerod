@@ -1,7 +1,5 @@
 #include "tempProbe.h"
 
-#define DEBUG
-
 bool TempProbe::init()
 {
 	if (_getAddress() && _sensorFound != 0)
@@ -19,7 +17,7 @@ int8_t TempProbe::isReady()
 {
 	if (_sensorFound)
 	{
-		if (millis() - _last_sample >= 1000)
+		if (millis() - _last_sample >= 750)
 		{
 			if (_updateTemp())
 			{
@@ -69,6 +67,9 @@ boolean TempProbe::_getAddress()
 		if (_address[0] == 0x10)
 		{
 			_type_s = 1;
+#ifdef DEBUG
+			Serial.println("Tempsensor is type S.");
+#endif
 		}
 		else
 		{

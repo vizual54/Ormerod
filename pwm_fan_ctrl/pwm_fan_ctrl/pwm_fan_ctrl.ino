@@ -7,8 +7,8 @@
 #include "tempProbe.h"
 
 #define INTERRUPT_PIN0 0
-#define DEBUG
-#define DEBUG_TEMP
+//#define DEBUG
+//#define DEBUG_TEMP
 #define HEARTBEATLED 13
 #define HEARTBEATFREQ 500
 
@@ -34,25 +34,26 @@ uint16_t		rpc_min = 0;
 uint16_t		rpc_max = 255;
 uint16_t		rpc_mid = rpc_min + (rpc_max - rpc_min) / 2;
 uint16_t		rpc_start = rpc_mid;
-double		rpc_out = rpc_min;
-
+double			rpc_out = rpc_min;
+uint16_t		temp_probe_timeout = 10000;
 volatile byte	half_revolutions;
 uint16_t		rpm;
 unsigned long	rpm_time_old;
-volatile double	current_temp = 0.0;
+volatile double	current_temp = -273.15;
 double			pid_input_temp;
 double			setpoint_temp = 22.5;
 double			p_term = 120;
 double			i_term = 50;
 double			d_term = 10;
 volatile long	last_good_temp;
-uint16_t		max_temp = 40;
-uint16_t		min_temp = 15;
-
+double			max_temp = 40;
+double			min_temp = 15;
+char			serial_data[101];			// Array for incoming serial-data 
+unsigned char	serial_index = 0;			// How many bytes have been received?
+char			string_started = 0;			// Only saves data if string starts with right byte
 mode			current_mode;
 failsafe_mode   current_failsafe_mode;
 mode			last_mode;
-//dht				DHT;
 uint16_t		ms_per_ramp_step = 10;
 unsigned long   debug_time;
 
@@ -290,6 +291,7 @@ void saveSettings()
 {
 	saveSetpoint();
 	savePidTerms();
+	saveMinMaxTemps();
 }
 
 void saveSetpoint()
@@ -316,12 +318,25 @@ void savePidTerms()
 	EEPROM.write(7, (uint8_t)(temp >> 8));
 }
 
+void saveMinMaxTemps()
+{
+	uint16_t temp;
+	temp = min_temp * 10;
+	EEPROM.write(8, (uint8_t)temp);
+	EEPROM.write(9, (uint8_t)(temp >> 8));
+	temp = max_temp * 10;
+	EEPROM.write(10, (uint8_t)temp);
+	EEPROM.write(11, (uint8_t)(temp >> 8));
+}
+
 void loadSettings()
 {
 	setpoint_temp = ((double)EEPROM.read(1) / 10.0);
 	p_term = (double)(EEPROM.read(2) + (EEPROM.read(3) << 8)) / 100;
 	i_term = (double)(EEPROM.read(4) + (EEPROM.read(5) << 8)) / 100;
 	d_term = (double)(EEPROM.read(6) + (EEPROM.read(7) << 8)) / 100;
+	min_temp = (double)(EEPROM.read(8) + (EEPROM.read(9) << 8)) / 10;
+	max_temp = (double)(EEPROM.read(10) + (EEPROM.read(11) << 8)) / 10;
 #ifdef DEBUG
 	Serial.println("Settings loaded from EEPROM.");
 	Serial.print("Setpoint temperature: ");
@@ -333,6 +348,211 @@ void loadSettings()
 	Serial.print(" d_term: ");
 	Serial.println(d_term);
 #endif
+}
+
+float termToDec(uint8_t length)
+{
+	uint8_t comma = 0;
+	long  rl = 0;
+	float rr = 0.0f;
+	float rb = 0.1f;
+	bool dec = false;
+	uint8_t i = 0;
+
+	if (serial_data[i] == '-' || serial_data[i] == '+')
+		i++;
+
+	while (i < length)
+	{
+		if (serial_data[i] == '.' || serial_data[i] == ',')
+		{
+			dec = true;
+		}
+		else
+		{
+			if (!dec)
+			{
+				rl = (10 * rl) + (serial_data[i] - 48);
+			}
+			else
+			{
+				rr += rb * (float)(serial_data[i] - 48);
+				rb /= 10.0;
+			}
+		}
+		i++;
+	}
+
+	rr += (float)rl;
+
+	if (serial_data[0] == '-')
+	{
+		rr = 0.0f - rr;
+	}
+
+	return rr;
+}
+
+void handleSerialCommands()
+{
+	if (Serial.available())
+	{
+		if (string_started == 1)
+		{
+			serial_data[serial_index++] = Serial.read();
+
+			// New SetPoint Temp
+			if (serial_data[serial_index - 4] == 'N' &&
+				serial_data[serial_index - 3] == 'S' &&
+				serial_data[serial_index - 2] == 'P' &&
+				serial_data[serial_index - 1] == 'T')
+			{
+				setpoint_temp = (double)termToDec(serial_index - 4);
+				Serial.print("Set new setpoint temp: ");
+				Serial.println(setpoint_temp);
+				serial_index = 0;
+				string_started = 0;
+			}
+			// New KP
+			else if (serial_data[serial_index - 3] == 'N' &&
+				serial_data[serial_index - 2] == 'K' &&
+				serial_data[serial_index - 1] == 'P')
+			{
+				p_term = (double)termToDec(serial_index - 3);
+				pid_controller.SetTunings(p_term, i_term, d_term);
+				Serial.print("Set new Kp: ");
+				Serial.println(p_term);
+				serial_index = 0;
+				string_started = 0;
+			}
+			// New KI
+			else if (serial_data[serial_index - 3] == 'N' &&
+				serial_data[serial_index - 2] == 'K' &&
+				serial_data[serial_index - 1] == 'I')
+			{
+				i_term = (double)termToDec(serial_index - 3);
+				pid_controller.SetTunings(p_term, i_term, d_term);
+				Serial.print("Set new Ki: ");
+				Serial.println(i_term);
+				serial_index = 0;
+				string_started = 0;
+			}
+			// New KD
+			else if (serial_data[serial_index - 3] == 'N' &&
+				serial_data[serial_index - 2] == 'K' &&
+				serial_data[serial_index - 1] == 'D')
+			{
+				d_term = (double)termToDec(serial_index - 3);
+				pid_controller.SetTunings(p_term, i_term, d_term);
+				Serial.print("Set new Kd: ");
+				Serial.println(i_term);
+				serial_index = 0;
+				string_started = 0;
+			}
+			// New MAX temp before failsafe
+			else if (serial_data[serial_index - 4] == 'N' &&
+				serial_data[serial_index - 3] == 'M' &&
+				serial_data[serial_index - 2] == 'A' &&
+				serial_data[serial_index - 1] == 'X')
+			{
+				max_temp = (double)termToDec(serial_index - 4);
+				Serial.print("Set new max_temp: ");
+				Serial.println(max_temp);
+				serial_index = 0;
+				string_started = 0;
+			}
+			// New MIN temp before failsafe
+			else if (serial_data[serial_index - 4] == 'N' &&
+				serial_data[serial_index - 3] == 'M' &&
+				serial_data[serial_index - 2] == 'I' &&
+				serial_data[serial_index - 1] == 'N')
+			{
+				min_temp = (double)termToDec(serial_index - 4);
+				Serial.print("Set new min_temp: ");
+				Serial.println(min_temp);
+				serial_index = 0;
+				string_started = 0;
+			}
+			// Print SetPoint
+			else if (serial_data[serial_index - 3] == 'P' &&
+				serial_data[serial_index - 2] == 'S' &&
+				serial_data[serial_index - 1] == 'P')
+			{
+				Serial.print("Setpoint temp: ");
+				Serial.println(setpoint_temp);
+				serial_index = 0;
+				string_started = 0;
+			}
+			// Print Kp, Ki, Kd
+			else if (serial_data[serial_index - 4] == 'P' &&
+				serial_data[serial_index - 3] == 'P' &&
+				serial_data[serial_index - 2] == 'I' &&
+				serial_data[serial_index - 1] == 'D')
+			{
+				Serial.print("PID controller Kp = ");
+				Serial.print(pid_controller.GetKp());
+				Serial.print(" Ki = ");
+				Serial.print(pid_controller.GetKi());
+				Serial.print(" Kd = ");
+				Serial.println(pid_controller.GetKd());
+				serial_index = 0;
+				string_started = 0;
+			}
+			// Print MAX temp
+			else if (serial_data[serial_index - 4] == 'P' &&
+				serial_data[serial_index - 3] == 'M' &&
+				serial_data[serial_index - 2] == 'A' &&
+				serial_data[serial_index - 1] == 'X')
+			{
+				Serial.print("Max temp = ");
+				Serial.println(max_temp);
+				serial_index = 0;
+				string_started = 0;
+			}
+			// Print MIN temp
+			else if (serial_data[serial_index - 4] == 'P' &&
+				serial_data[serial_index - 3] == 'M' &&
+				serial_data[serial_index - 2] == 'I' &&
+				serial_data[serial_index - 1] == 'N')
+			{
+				Serial.print("Min temp = ");
+				Serial.println(min_temp);
+				serial_index = 0;
+				string_started = 0;
+			}
+			// Save SetPoint Temp
+			else if (serial_data[serial_index - 4] == 'S' &&
+				serial_data[serial_index - 3] == 'S' &&
+				serial_data[serial_index - 2] == 'P' &&
+				serial_data[serial_index - 1] == 'T')
+			{
+				Serial.println("Saving setpoint temperature.");
+				saveSetpoint();
+			}
+			// Save PID terms
+			else if (serial_data[serial_index - 4] == 'S' &&
+				serial_data[serial_index - 3] == 'P' &&
+				serial_data[serial_index - 2] == 'I' &&
+				serial_data[serial_index - 1] == 'D')
+			{
+				Serial.println("Saving PID terms.");
+				savePidTerms();
+			}
+			// Save Max Min Temps
+			else if (serial_data[serial_index - 4] == 'S' &&
+				serial_data[serial_index - 3] == 'M' &&
+				serial_data[serial_index - 2] == 'M' &&
+				serial_data[serial_index - 1] == 'T')
+			{
+				Serial.println("Saving min max temps.");
+				saveMinMaxTemps();
+			}
+		}
+		else if (Serial.read() == '$')
+		{
+			string_started = 1;
+		}
+	}
 }
 
 void setup() {
@@ -393,10 +613,14 @@ void setup() {
 	do
 	{
 #ifdef DEBUG
-		Serial.println("waiting for temp.");
+		Serial.println("Waiting for temp reading.");
+		Serial.print("Current temp is: ");
+		Serial.println(current_temp);
+		Serial.print("temp_probe_initialized = ");
+		Serial.println(temp_probe_initialized);
 #endif
 		delay(500);
-	} while (!temp_probe_initialized && current_temp <= 0);
+	} while (current_temp <= 0);
 
 	pid_input_temp = current_temp;
 	pid_controller.Compute();
@@ -415,6 +639,8 @@ void loop()
 	wdt_reset();
 	
 	updateHeartbeat();
+
+	handleSerialCommands();
 
 	if (half_revolutions > 20)
 	{
@@ -460,8 +686,11 @@ void loop()
 	}
 #endif
 	
-	// Make sure we have good temp readings
-	if (millis() - last_good_temp < 20000)
+	// Make sure temp probe is present and we have good temp readings
+	// If temperature is higher or lower than preset values turn on/off fans.
+	// If temp probe is not present or time since last know temperature is too long
+	// switch to failsafe and turn on fans high
+	if (temp_probe_initialized && ((millis() - last_good_temp) < temp_probe_timeout))
 	{
 		if (current_mode != failsafe && current_temp > max_temp)
 		{
@@ -485,7 +714,7 @@ void loop()
 			switch_mode(last_mode);
 		}
 	}
-	else if (millis() - last_good_temp > 20000)  // Something wrong the temp sensor, switch to failsafe and high temp mode
+	else if (temp_probe_initialized == false || (millis() - last_good_temp) > temp_probe_timeout)  // Something wrong the temp sensor, switch to failsafe and high temp mode
 	{
 		if (current_mode != failsafe && current_failsafe_mode != high_temp)
 		{
