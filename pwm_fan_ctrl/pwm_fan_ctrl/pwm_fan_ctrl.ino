@@ -56,6 +56,7 @@ failsafe_mode   current_failsafe_mode;
 mode			last_mode;
 uint16_t		ms_per_ramp_step = 10;
 unsigned long   debug_time;
+bool			debug_print;
 
 PID				pid_controller(&pid_input_temp, &rpc_out, &setpoint_temp, p_term, i_term, d_term, REVERSE);
 OneWire			oneWire(dht_pin);
@@ -528,6 +529,8 @@ void handleSerialCommands()
 			{
 				Serial.println("Saving setpoint temperature.");
 				saveSetpoint();
+				serial_index = 0;
+				string_started = 0;
 			}
 			// Save PID terms
 			else if (serial_data[serial_index - 4] == 'S' &&
@@ -537,6 +540,8 @@ void handleSerialCommands()
 			{
 				Serial.println("Saving PID terms.");
 				savePidTerms();
+				serial_index = 0;
+				string_started = 0;
 			}
 			// Save Max Min Temps
 			else if (serial_data[serial_index - 4] == 'S' &&
@@ -546,6 +551,18 @@ void handleSerialCommands()
 			{
 				Serial.println("Saving min max temps.");
 				saveMinMaxTemps();
+				serial_index = 0;
+				string_started = 0;
+			}
+			else if (serial_data[serial_index - 5] == 'D' &&
+				serial_data[serial_index - 4] == 'E' &&
+				serial_data[serial_index - 3] == 'B' &&
+				serial_data[serial_index - 2] == 'U' &&
+				serial_data[serial_index - 1] == 'G')
+			{
+				debug_print = debug_print ? false : true;
+				serial_index = 0;
+				string_started = 0;
 			}
 		}
 		else if (Serial.read() == '$')
@@ -668,10 +685,37 @@ void loop()
 		}
 	}
 
-#ifdef DEBUG
 	// Print debug info every 5 seconds
-	if (millis() - debug_time > 5000)
+	if (debug_print && millis() - debug_time > 5000)
 	{
+		Serial.print("Current mode: ");
+		switch (current_mode)
+		{
+		case user:
+			Serial.println("USER");
+			break;
+		case pid_ctrl:
+			Serial.println("PID Controlled");
+			break;
+		case failsafe:
+			Serial.println("FAILSAFE");
+			break;
+		default:
+			Serial.println("Unknown");
+			break;
+		}
+		Serial.print("Setpoint temperature: ");
+		Serial.println(setpoint_temp);
+		Serial.print("PID controller Kp = ");
+		Serial.print(pid_controller.GetKp());
+		Serial.print(" Ki = ");
+		Serial.print(pid_controller.GetKi());
+		Serial.print(" Kd = ");
+		Serial.println(pid_controller.GetKd());
+		Serial.print("Max_temp: ");
+		Serial.print(max_temp);
+		Serial.print(" Min_temp: ");
+		Serial.println(min_temp);
 		Serial.print("Temperature: ");
 		Serial.println(current_temp);
 		Serial.print("RPC_OUT is: ");
@@ -684,7 +728,6 @@ void loop()
 		Serial.println(loopTime);
 		debug_time = millis();
 	}
-#endif
 	
 	// Make sure temp probe is present and we have good temp readings
 	// If temperature is higher or lower than preset values turn on/off fans.
